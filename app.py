@@ -1,73 +1,62 @@
-from flask import Flask, render_template, request, redirect
-import sqlite3
+from flask import Flask, render_template, request, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
 import os
 
 app = Flask(__name__)
 
-DB_PATH = "rifa.db"
+# Pegando a URL do banco via variável de ambiente (Railway fornecerá essa variável)
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-def init_db():
-    if not os.path.exists(DB_PATH):
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('''
-            CREATE TABLE rifa (
-                numero INTEGER PRIMARY KEY,
-                nome TEXT,
-                contato TEXT,
-                status TEXT
-            )
-        ''')
-        for i in range(1, 101):
-            c.execute("INSERT INTO rifa (numero, status) VALUES (?, ?)", (i, 'disponivel'))
-        conn.commit()
-        conn.close()
+# Caso você queira testar localmente, descomente a linha abaixo e coloque sua string de conexão local (opcional)
+# DATABASE_URL = 'postgresql://usuario:senha@host:porta/nome_do_banco'
+
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+class Reserva(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    numero = db.Column(db.Integer, unique=True, nullable=False)
+    nome = db.Column(db.String(80))
+    contato = db.Column(db.String(120))
+    status = db.Column(db.String(20), default='reservado')
+
+@app.before_first_request
+def criar_tabelas():
+    db.create_all()
 
 @app.route('/')
 def index():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT numero FROM rifa WHERE status = 'disponivel'")
-    numeros_disponiveis = [row[0] for row in c.fetchall()]
-    conn.close()
-    return render_template("index.html", numeros=numeros_disponiveis)
+    reservas = Reserva.query.order_by(Reserva.numero).all()
+    return render_template('index.html', reservas=reservas)
 
-@app.route('/comprar', methods=['POST'])
-def comprar():
-    numero = request.form['numero']
+@app.route('/reservar', methods=['POST'])
+def reservar():
+    numero = int(request.form['numero'])
     nome = request.form['nome']
     contato = request.form['contato']
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT status FROM rifa WHERE numero = ?", (numero,))
-    status = c.fetchone()
+    if Reserva.query.filter_by(numero=numero).first():
+        return "Número já reservado. Volte e escolha outro número."
 
-    if status and status[0] == 'disponivel':
-        c.execute("UPDATE rifa SET nome = ?, contato = ?, status = 'reservado' WHERE numero = ?", (nome, contato, numero))
-        conn.commit()
-
-    conn.close()
-    return redirect('/')
+    reserva = Reserva(numero=numero, nome=nome, contato=contato)
+    db.session.add(reserva)
+    db.session.commit()
+    return redirect(url_for('index'))
 
 @app.route('/admin')
 def admin():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM rifa WHERE status != 'disponivel'")
-    vendidos = c.fetchall()
-    conn.close()
-    return render_template("admin.html", vendidos=vendidos)
+    reservas = Reserva.query.order_by(Reserva.numero).all()
+    return render_template('admin.html', reservas=reservas)
 
-@app.route('/confirmar/<int:numero>')
-def confirmar(numero):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE rifa SET status = 'pago' WHERE numero = ?", (numero,))
-    conn.commit()
-    conn.close()
-    return redirect('/admin')
+@app.route('/confirmar/<int:id>')
+def confirmar(id):
+    reserva = Reserva.query.get(id)
+    reserva.status = 'pago'
+    db.session.commit()
+    return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
+
