@@ -4,11 +4,9 @@ import os
 
 app = Flask(__name__)
 
-# Pegando a URL do banco via variável de ambiente (Railway fornecerá essa variável)
-DATABASE_URL = os.environ.get('DATABASE_URL')
-
-# Caso você queira testar localmente, descomente a linha abaixo e coloque sua string de conexão local (opcional)
-# DATABASE_URL = 'postgresql://usuario:senha@host:porta/nome_do_banco'
+# Obtém a URL do banco via variável de ambiente 'DATABASE_URL'
+# Se não estiver definida, usa SQLite local como fallback (útil para testes locais)
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
 
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -37,6 +35,7 @@ def reservar():
     nome = request.form['nome']
     contato = request.form['contato']
 
+    # Verifica se o número já foi reservado
     if Reserva.query.filter_by(numero=numero).first():
         return "Número já reservado. Volte e escolha outro número."
 
@@ -53,10 +52,12 @@ def admin():
 @app.route('/confirmar/<int:id>')
 def confirmar(id):
     reserva = Reserva.query.get(id)
-    reserva.status = 'pago'
-    db.session.commit()
+    if reserva:
+        reserva.status = 'pago'
+        db.session.commit()
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
+    # Roda a aplicação na porta 5000 acessível externamente
     app.run(host='0.0.0.0', port=5000)
 
