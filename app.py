@@ -20,8 +20,9 @@ class Reserva(db.Model):
     contato = db.Column(db.String(120))
     status = db.Column(db.String(20), default='reservado')
 
-@app.before_serving
+@app.before_first_request
 def criar_tabelas():
+    # Cria as tabelas no banco na primeira requisição
     db.create_all()
 
 @app.route('/')
