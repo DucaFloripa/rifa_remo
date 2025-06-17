@@ -4,8 +4,7 @@ import os
 
 app = Flask(__name__)
 
-# Obtém a URL do banco via variável de ambiente 'DATABASE_URL'
-# Se não estiver definida, usa SQLite local como fallback (útil para testes locais)
+# Usa DATABASE_URL de variável de ambiente ou fallback para SQLite local
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
 
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
@@ -20,9 +19,9 @@ class Reserva(db.Model):
     contato = db.Column(db.String(120))
     status = db.Column(db.String(20), default='reservado')
 
-@app.before_serving
+@app.before_first_request
 def criar_tabelas():
-    # Cria as tabelas no banco na primeira requisição
+    """Cria as tabelas no banco de dados antes da primeira requisição."""
     db.create_all()
 
 @app.route('/')
@@ -40,8 +39,8 @@ def reservar():
     if Reserva.query.filter_by(numero=numero).first():
         return "Número já reservado. Volte e escolha outro número."
 
-    reserva = Reserva(numero=numero, nome=nome, contato=contato)
-    db.session.add(reserva)
+    nova_reserva = Reserva(numero=numero, nome=nome, contato=contato)
+    db.session.add(nova_reserva)
     db.session.commit()
     return redirect(url_for('index'))
 
@@ -52,13 +51,12 @@ def admin():
 
 @app.route('/confirmar/<int:id>')
 def confirmar(id):
-    reserva = Reserva.query.get(id)
-    if reserva:
-        reserva.status = 'pago'
-        db.session.commit()
+    reserva = Reserva.query.get_or_404(id)
+    reserva.status = 'pago'
+    db.session.commit()
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    # Roda a aplicação na porta 5000 acessível externamente
+    # Executa a aplicação
     app.run(host='0.0.0.0', port=5000)
 
